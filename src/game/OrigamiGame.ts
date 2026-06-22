@@ -3,6 +3,7 @@ import { SeededRandom, generateSeed } from '../utils/random';
 import { OrigamiSVG } from '../components/OrigamiSVG';
 import { Model3DViewer } from '../components/Model3DViewer';
 import { FoldStateManager } from './FoldStateManager';
+import { SoundManager } from '../utils/SoundManager';
 
 export interface GameState {
   currentQuestion: Question | null;
@@ -30,6 +31,8 @@ export class OrigamiGame {
   private resetBtn: HTMLButtonElement | null = null;
   private hintBtn: HTMLButtonElement | null = null;
   private nextBtn: HTMLButtonElement | null = null;
+  private muteBtn: HTMLButtonElement | null = null;
+  private soundManager: SoundManager = new SoundManager();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -50,6 +53,7 @@ export class OrigamiGame {
   }
 
   private initUI(): void {
+    const muteIcon = this.soundManager.isMuted() ? '🔇' : '🔊';
     this.container.innerHTML = `
       <div class="game-container">
         <div class="game-header">
@@ -67,6 +71,7 @@ export class OrigamiGame {
               <span class="stat-label">步数</span>
               <span class="stat-value" id="steps-display">0/0</span>
             </span>
+            <button class="btn-mute" id="mute-btn" title="${this.soundManager.isMuted() ? '开启声音' : '静音'}">${muteIcon}</button>
           </div>
         </div>
 
@@ -105,11 +110,21 @@ export class OrigamiGame {
     this.resetBtn = this.container.querySelector('#reset-btn');
     this.hintBtn = this.container.querySelector('#hint-btn');
     this.nextBtn = this.container.querySelector('#next-btn');
+    this.muteBtn = this.container.querySelector('#mute-btn');
 
     this.submitBtn?.addEventListener('click', () => this.checkAnswer());
     this.resetBtn?.addEventListener('click', () => this.resetFolds());
     this.hintBtn?.addEventListener('click', () => this.showHint());
     this.nextBtn?.addEventListener('click', () => this.nextQuestion());
+    this.muteBtn?.addEventListener('click', () => this.toggleMute());
+  }
+
+  private toggleMute(): void {
+    const muted = this.soundManager.toggleMute();
+    if (this.muteBtn) {
+      this.muteBtn.textContent = muted ? '🔇' : '🔊';
+      this.muteBtn.title = muted ? '开启声音' : '静音';
+    }
   }
 
   private startGame(): void {
@@ -202,10 +217,12 @@ export class OrigamiGame {
     if (!this.foldStateManager || this.state.gameStatus !== 'playing') return;
 
     if (this.foldStateManager.fold(lineId)) {
+      this.soundManager.play('foldSuccess');
       this.state.stepsUsed = this.foldStateManager.getCurrentStep();
       this.updateStepsDisplay();
       this.checkFoldComplete();
     } else {
+      this.soundManager.play('foldError');
       this.origamiSVG?.unfoldLine(lineId, false);
       const nextLine = this.foldStateManager.getNextFoldLine();
       if (nextLine) {
@@ -238,6 +255,7 @@ export class OrigamiGame {
   private selectModel(modelId: string): void {
     if (this.state.gameStatus !== 'playing') return;
 
+    this.soundManager.play('selectModel');
     this.state.selectedModelId = modelId;
 
     this.modelViewers.forEach(viewer => {
@@ -271,12 +289,14 @@ export class OrigamiGame {
     const isCorrect = this.state.selectedModelId === this.state.currentQuestion.correctModelId;
 
     if (isCorrect) {
+      this.soundManager.play('answerCorrect');
       const stepsBonus = Math.max(0, this.state.currentQuestion.maxSteps - this.state.stepsUsed) * 10;
       const baseScore = this.state.currentQuestion.difficulty * 100;
       this.state.score += baseScore + stepsBonus;
       this.state.gameStatus = 'won';
       this.showMessage(`🎉 答对了！获得 ${baseScore + stepsBonus} 分`, 'success');
     } else {
+      this.soundManager.play('answerWrong');
       this.state.gameStatus = 'lost';
       this.showMessage('😅 答错了，再试试吧！正确答案已高亮', 'error');
       this.highlightCorrectAnswer();
